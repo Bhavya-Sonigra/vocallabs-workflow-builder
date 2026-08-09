@@ -1,0 +1,40 @@
+table:
+  name: organizations
+  schema: public
+array_relationships:
+  - name: org_members
+    using:
+      foreign_key_constraint_on:
+        column: org_id
+        table:
+          name: org_members
+          schema: public
+  - name: workflow_runs
+    using:
+      foreign_key_constraint_on:
+        column: org_id
+        table:
+          name: workflow_runs
+          schema: public
+  - name: workflows
+    using:
+      foreign_key_constraint_on:
+        column: org_id
+        table:
+          name: workflows
+          schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - quota_period_start
+        - quota_calls_allowed
+        - quota_calls_used
+        - name
+        - created_at
+        - id
+      filter:
+        org_members:
+          user_id:
+            _eq: X-Hasura-User-Id
+    comment: ""
