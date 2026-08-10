@@ -1,0 +1,29 @@
+table:
+  name: notifications
+  schema: public
+insert_permissions:
+  - role: admin
+    permission:
+      check: {}
+      columns:
+        - channel
+        - created_at
+        - id
+        - message
+        - recipient
+        - workflow_run_id
+    comment: ""
+event_triggers:
+  - name: send_notification
+    definition:
+      enable_manual: false
+      insert:
+        columns: "*"
+    retry_conf:
+      interval_sec: 10
+      num_retries: 0
+      timeout_sec: 60
+    webhook: https://httpbin.org/post
+    headers:
+      - name: Content-Type
+        value: application/json

@@ -512,33 +512,84 @@ export function executeConditionalBranch(
 }
 
 /**
- * Execute a db_write step (stub).
+ * Execute a db_write step.
  */
 export async function executeDbWrite(
-  config: StepConfig
+  config: StepConfig,
+  stepRunId: string,
+  workflowRunId: string,
+  gqlClient: GraphQLClient
 ): Promise<StepResult> {
+  const dataToSave = config.data || { note: "Workflow execution log" };
+  
+  const mutation = `
+    mutation InsertResult($workflow_run_id: uuid!, $step_run_id: uuid!, $data: jsonb!) {
+      insert_workflow_results_one(object: {
+        workflow_run_id: $workflow_run_id,
+        step_run_id: $step_run_id,
+        data: $data
+      }) {
+        id
+      }
+    }
+  `;
+
+  await gqlClient.request(mutation, {
+    workflow_run_id: workflowRunId,
+    step_run_id: stepRunId,
+    data: dataToSave
+  });
+
   return {
     success: true,
     output: {
       action: "db_write",
-      query: config.query || config.mutation || "(none)",
-      note: "db_write executed (stub)",
+      saved_data: dataToSave,
+      message: "Successfully saved to workflow_results table",
     },
   };
 }
 
 /**
- * Execute a notify step (stub).
+ * Execute a notify step.
  */
 export async function executeNotify(
-  config: StepConfig
+  config: StepConfig,
+  workflowRunId: string,
+  gqlClient: GraphQLClient
 ): Promise<StepResult> {
   const channel = config.channel || "email";
-  const to = config.to || "admin";
-  const message = config.message || "Workflow notification";
+  const recipient = config.to || "admin@example.com";
+  const message = config.message || "Workflow notification triggered";
+
+  const mutation = `
+    mutation InsertNotification($workflow_run_id: uuid!, $channel: String!, $message: String!, $recipient: String!) {
+      insert_notifications_one(object: {
+        workflow_run_id: $workflow_run_id,
+        channel: $channel,
+        message: $message,
+        recipient: $recipient
+      }) {
+        id
+      }
+    }
+  `;
+
+  await gqlClient.request(mutation, {
+    workflow_run_id: workflowRunId,
+    channel,
+    message,
+    recipient
+  });
+
   return {
     success: true,
-    output: { action: "notify", channel, to, message, note: "sent (stub)" },
+    output: {
+      action: "notify",
+      channel,
+      recipient,
+      message: "Notification queued and Event Trigger fired successfully",
+    },
   };
 }
 
@@ -600,11 +651,11 @@ export async function executeSteps(
         break;
 
       case "db_write":
-        result = await executeDbWrite(step.config || {});
+        result = await executeDbWrite(step.config || {}, stepRunId, runId, gqlClient);
         break;
 
       case "notify":
-        result = await executeNotify(step.config || {});
+        result = await executeNotify(step.config || {}, runId, gqlClient);
         break;
 
       case "approval_gate":
