@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "@apollo/client/react";
+import { useQuery, useMutation, useSubscription } from "@apollo/client/react";
 import { useRouter } from "next/navigation";
 import AuthGuard from "@/components/auth-guard";
-import { GET_WORKFLOWS, GET_MY_ORGS, GET_ORG_STATS } from "@/lib/graphql/queries";
+import { GET_WORKFLOWS, GET_MY_ORGS } from "@/lib/graphql/queries";
+import { SUBSCRIBE_ORG_STATS } from "@/lib/graphql/subscriptions";
 import { INSERT_WORKFLOW, TRIGGER_WORKFLOW_RUN, DELETE_WORKFLOW_BY_PK } from "@/lib/graphql/mutations";
 import Link from "next/link";
 import { FiPlus, FiAlertTriangle, FiZap, FiTrash2, FiPlay, FiStar } from "react-icons/fi";
@@ -25,7 +26,7 @@ function WorkflowsContent() {
     skip: !orgId,
   });
 
-  const { data: statsData } = useQuery<any>(GET_ORG_STATS, {
+  const { data: statsData, error: statsError } = useSubscription<any>(SUBSCRIBE_ORG_STATS, {
     variables: { org_id: orgId },
     skip: !orgId,
   });
@@ -104,13 +105,12 @@ function WorkflowsContent() {
                 ? `Managing ${workflows.length} active automation${workflows.length !== 1 ? "s" : ""}`
                 : "No workflows created yet."}
             </p>
-            {totalRuns > 0 && (
-              <div className="flex items-center gap-3 px-3 py-1 bg-teal-50 border border-teal-100 rounded-lg text-xs font-semibold text-teal-700">
-                <span>Total Runs: {totalRuns}</span>
-                <span className="w-1 h-1 rounded-full bg-teal-300" />
-                <span>Avg Duration: {avgDuration}s</span>
-              </div>
-            )}
+            <div className="flex items-center gap-3 px-3 py-1 bg-teal-50 border border-teal-100 rounded-lg text-xs font-semibold text-teal-700 shadow-sm">
+              <span>Total Runs: {totalRuns}</span>
+              <span className="w-1 h-1 rounded-full bg-teal-300" />
+              <span>Avg Duration: {avgDuration}s</span>
+            </div>
+            {statsError && <span className="text-xs text-red-500">Error: {statsError.message}</span>}
           </div>
         </div>
         <button

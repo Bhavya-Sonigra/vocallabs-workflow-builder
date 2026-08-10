@@ -64,3 +64,12 @@ export const SUBSCRIBE_MY_ORGS = gql`
     }
   }
 `;
+
+export const SUBSCRIBE_ORG_STATS = gql`
+  subscription SubscribeOrgStats($org_id: uuid!) {
+    org_run_stats(where: { org_id: { _eq: $org_id } }) {
+      total_runs
+      avg_duration_seconds
+    }
+  }
+`;

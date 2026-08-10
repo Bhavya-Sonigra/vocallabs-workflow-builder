@@ -7,6 +7,7 @@ object_relationships:
       manual_configuration:
         column_mapping:
           org_id: id
+        insertion_order: null
         remote_table:
           name: organizations
           schema: public
