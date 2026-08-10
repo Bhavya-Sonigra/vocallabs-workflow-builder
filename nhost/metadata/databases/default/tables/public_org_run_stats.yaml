@@ -1,0 +1,25 @@
+table:
+  name: org_run_stats
+  schema: public
+object_relationships:
+  - name: organization
+    using:
+      manual_configuration:
+        column_mapping:
+          org_id: id
+        remote_table:
+          name: organizations
+          schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - avg_duration_seconds
+        - org_id
+        - total_runs
+      filter:
+        organization:
+          org_members:
+            user_id:
+              _eq: X-Hasura-User-Id
+    comment: ""
