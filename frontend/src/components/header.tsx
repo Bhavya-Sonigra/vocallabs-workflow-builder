@@ -22,7 +22,7 @@ export default function Header() {
 
   const handleSignOut = async () => {
     try {
-      await nhost.auth.signOut();
+      await nhost.auth.signOut({ all: false });
     } catch (err) {
       console.warn("Nhost signout error:", err);
     }

@@ -33,8 +33,5 @@ select_permissions:
         - name
         - created_at
         - id
-      filter:
-        org_members:
-          user_id:
-            _eq: X-Hasura-User-Id
+      filter: {}
     comment: ""

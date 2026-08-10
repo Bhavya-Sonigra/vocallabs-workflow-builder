@@ -14,10 +14,13 @@ import { GraphQLClient, gql } from "graphql-request";
 // ────────────────────────────────────────────────────────────────────────────
 
 const GRAPHQL_URL =
-  process.env.NHOST_GRAPHQL_URL || "http://graphql:8080/v1/graphql";
+  process.env.NHOST_GRAPHQL_URL ||
+  (process.env.NHOST_BACKEND_URL ? `${process.env.NHOST_BACKEND_URL}/v1/graphql` : "http://graphql:8080/v1/graphql");
 
 const ADMIN_SECRET =
-  process.env.HASURA_GRAPHQL_ADMIN_SECRET || "nhost-admin-secret";
+  process.env.NHOST_ADMIN_SECRET ||
+  process.env.HASURA_GRAPHQL_ADMIN_SECRET ||
+  "nhost-admin-secret";
 
 export const gqlClient = new GraphQLClient(GRAPHQL_URL, {
   headers: { "x-hasura-admin-secret": ADMIN_SECRET },

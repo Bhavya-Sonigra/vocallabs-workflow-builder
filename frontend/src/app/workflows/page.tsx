@@ -18,7 +18,9 @@ function WorkflowsContent() {
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
   const [triggerError, setTriggerError] = useState<string | null>(null);
 
-  const { data: orgsData } = useQuery<any>(GET_MY_ORGS);
+  const { data: orgsData } = useQuery<any>(GET_MY_ORGS, {
+    fetchPolicy: "network-only",
+  });
   const orgId = orgsData?.org_members?.[0]?.org_id;
 
   const { data, loading, refetch } = useQuery<any>(GET_WORKFLOWS, {
@@ -45,14 +47,24 @@ function WorkflowsContent() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!orgId || !newName.trim()) return;
-    await insertWorkflow({
-      variables: {
-        name: newName.trim(),
-        org_id: orgId,
-        description: newDesc.trim() || null,
-      },
-    });
+    if (!orgId) {
+      alert("Error: orgId is not loaded yet. Make sure you are in an organization!");
+      return;
+    }
+    if (!newName.trim()) return;
+
+    try {
+      await insertWorkflow({
+        variables: {
+          name: newName.trim(),
+          org_id: orgId,
+          description: newDesc.trim() || null,
+        },
+      });
+    } catch (err: any) {
+      alert("Failed to create workflow: " + err.message);
+      console.error(err);
+    }
   };
 
   const handleTriggerRun = async (workflowId: string) => {

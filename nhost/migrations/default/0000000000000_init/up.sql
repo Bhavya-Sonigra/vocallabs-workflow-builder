@@ -1,0 +1,549 @@
+--
+-- PostgreSQL database dump
+--
+
+
+-- Dumped from database version 14.20
+-- Dumped by pg_dump version 14.20
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: postgres
+--
+
+
+
+
+--
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: postgres
+--
+
+
+
+--
+-- Name: org_role; Type: TYPE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TYPE public.org_role AS ENUM (
+    'owner',
+    'editor',
+    'viewer'
+);
+
+
+ALTER TYPE public.org_role OWNER TO nhost_hasura;
+
+--
+-- Name: run_status; Type: TYPE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TYPE public.run_status AS ENUM (
+    'pending',
+    'running',
+    'paused',
+    'completed',
+    'failed'
+);
+
+
+ALTER TYPE public.run_status OWNER TO nhost_hasura;
+
+--
+-- Name: step_run_status; Type: TYPE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TYPE public.step_run_status AS ENUM (
+    'pending',
+    'running',
+    'paused',
+    'succeeded',
+    'failed',
+    'skipped'
+);
+
+
+ALTER TYPE public.step_run_status OWNER TO nhost_hasura;
+
+--
+-- Name: step_type; Type: TYPE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TYPE public.step_type AS ENUM (
+    'llm_call',
+    'http_request',
+    'db_write',
+    'notify',
+    'conditional_branch',
+    'approval_gate'
+);
+
+
+ALTER TYPE public.step_type OWNER TO nhost_hasura;
+
+--
+-- Name: trigger_type; Type: TYPE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TYPE public.trigger_type AS ENUM (
+    'manual',
+    'webhook',
+    'scheduled',
+    'db_event'
+);
+
+
+ALTER TYPE public.trigger_type OWNER TO nhost_hasura;
+
+--
+-- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: nhost_hasura
+--
+
+CREATE FUNCTION public.set_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.set_updated_at() OWNER TO nhost_hasura;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: org_members; Type: TABLE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TABLE public.org_members (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    org_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    role public.org_role DEFAULT 'viewer'::public.org_role NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.org_members OWNER TO nhost_hasura;
+
+--
+-- Name: workflow_runs; Type: TABLE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TABLE public.workflow_runs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workflow_id uuid NOT NULL,
+    org_id uuid NOT NULL,
+    status public.run_status DEFAULT 'pending'::public.run_status NOT NULL,
+    triggered_by uuid,
+    trigger_type public.trigger_type NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone
+);
+
+
+ALTER TABLE public.workflow_runs OWNER TO nhost_hasura;
+
+--
+-- Name: org_run_stats; Type: VIEW; Schema: public; Owner: nhost_hasura
+--
+
+CREATE VIEW public.org_run_stats AS
+ SELECT workflow_runs.org_id,
+    count(workflow_runs.id) AS total_runs,
+    avg(EXTRACT(epoch FROM (workflow_runs.finished_at - workflow_runs.started_at))) AS avg_duration_seconds
+   FROM public.workflow_runs
+  WHERE (workflow_runs.finished_at IS NOT NULL)
+  GROUP BY workflow_runs.org_id;
+
+
+ALTER TABLE public.org_run_stats OWNER TO nhost_hasura;
+
+--
+-- Name: organizations; Type: TABLE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TABLE public.organizations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    quota_calls_allowed integer DEFAULT 100 NOT NULL,
+    quota_calls_used integer DEFAULT 0 NOT NULL,
+    quota_period_start date DEFAULT date_trunc('month'::text, now()) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.organizations OWNER TO nhost_hasura;
+
+--
+-- Name: step_runs; Type: TABLE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TABLE public.step_runs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workflow_run_id uuid NOT NULL,
+    workflow_step_id uuid NOT NULL,
+    status public.step_run_status DEFAULT 'pending'::public.step_run_status NOT NULL,
+    input jsonb,
+    output jsonb,
+    error text,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone
+);
+
+
+ALTER TABLE public.step_runs OWNER TO nhost_hasura;
+
+--
+-- Name: workflow_results; Type: TABLE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TABLE public.workflow_results (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workflow_run_id uuid NOT NULL,
+    step_run_id uuid NOT NULL,
+    data jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.workflow_results OWNER TO nhost_hasura;
+
+--
+-- Name: workflow_steps; Type: TABLE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TABLE public.workflow_steps (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workflow_id uuid NOT NULL,
+    step_order integer NOT NULL,
+    type public.step_type NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.workflow_steps OWNER TO nhost_hasura;
+
+--
+-- Name: workflow_triggers; Type: TABLE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TABLE public.workflow_triggers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workflow_id uuid NOT NULL,
+    type public.trigger_type NOT NULL,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.workflow_triggers OWNER TO nhost_hasura;
+
+--
+-- Name: workflows; Type: TABLE; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TABLE public.workflows (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    org_id uuid NOT NULL,
+    name text NOT NULL,
+    description text,
+    created_by uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.workflows OWNER TO nhost_hasura;
+
+--
+-- Name: org_members org_members_org_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.org_members
+    ADD CONSTRAINT org_members_org_id_user_id_key UNIQUE (org_id, user_id);
+
+
+--
+-- Name: org_members org_members_pkey; Type: CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.org_members
+    ADD CONSTRAINT org_members_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: organizations organizations_pkey; Type: CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.organizations
+    ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: step_runs step_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.step_runs
+    ADD CONSTRAINT step_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_results workflow_results_pkey; Type: CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_results
+    ADD CONSTRAINT workflow_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_runs workflow_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT workflow_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_steps workflow_steps_pkey; Type: CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_steps
+    ADD CONSTRAINT workflow_steps_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_steps workflow_steps_workflow_id_step_order_key; Type: CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_steps
+    ADD CONSTRAINT workflow_steps_workflow_id_step_order_key UNIQUE (workflow_id, step_order);
+
+
+--
+-- Name: workflow_triggers workflow_triggers_pkey; Type: CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_triggers
+    ADD CONSTRAINT workflow_triggers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflows workflows_pkey; Type: CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflows
+    ADD CONSTRAINT workflows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_org_members_org; Type: INDEX; Schema: public; Owner: nhost_hasura
+--
+
+CREATE INDEX idx_org_members_org ON public.org_members USING btree (org_id);
+
+
+--
+-- Name: idx_org_members_user; Type: INDEX; Schema: public; Owner: nhost_hasura
+--
+
+CREATE INDEX idx_org_members_user ON public.org_members USING btree (user_id);
+
+
+--
+-- Name: idx_step_runs_workflow_run; Type: INDEX; Schema: public; Owner: nhost_hasura
+--
+
+CREATE INDEX idx_step_runs_workflow_run ON public.step_runs USING btree (workflow_run_id);
+
+
+--
+-- Name: idx_workflow_results_run; Type: INDEX; Schema: public; Owner: nhost_hasura
+--
+
+CREATE INDEX idx_workflow_results_run ON public.workflow_results USING btree (workflow_run_id);
+
+
+--
+-- Name: idx_workflow_runs_org; Type: INDEX; Schema: public; Owner: nhost_hasura
+--
+
+CREATE INDEX idx_workflow_runs_org ON public.workflow_runs USING btree (org_id);
+
+
+--
+-- Name: idx_workflow_runs_workflow; Type: INDEX; Schema: public; Owner: nhost_hasura
+--
+
+CREATE INDEX idx_workflow_runs_workflow ON public.workflow_runs USING btree (workflow_id);
+
+
+--
+-- Name: idx_workflow_steps_workflow; Type: INDEX; Schema: public; Owner: nhost_hasura
+--
+
+CREATE INDEX idx_workflow_steps_workflow ON public.workflow_steps USING btree (workflow_id);
+
+
+--
+-- Name: idx_workflow_triggers_workflow; Type: INDEX; Schema: public; Owner: nhost_hasura
+--
+
+CREATE INDEX idx_workflow_triggers_workflow ON public.workflow_triggers USING btree (workflow_id);
+
+
+--
+-- Name: idx_workflows_org; Type: INDEX; Schema: public; Owner: nhost_hasura
+--
+
+CREATE INDEX idx_workflows_org ON public.workflows USING btree (org_id);
+
+
+--
+-- Name: workflows trg_workflows_updated_at; Type: TRIGGER; Schema: public; Owner: nhost_hasura
+--
+
+CREATE TRIGGER trg_workflows_updated_at BEFORE UPDATE ON public.workflows FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: org_members org_members_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.org_members
+    ADD CONSTRAINT org_members_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: org_members org_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.org_members
+    ADD CONSTRAINT org_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: step_runs step_runs_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.step_runs
+    ADD CONSTRAINT step_runs_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: step_runs step_runs_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.step_runs
+    ADD CONSTRAINT step_runs_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: step_runs step_runs_workflow_step_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.step_runs
+    ADD CONSTRAINT step_runs_workflow_step_id_fkey FOREIGN KEY (workflow_step_id) REFERENCES public.workflow_steps(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_results workflow_results_step_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_results
+    ADD CONSTRAINT workflow_results_step_run_id_fkey FOREIGN KEY (step_run_id) REFERENCES public.step_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_results workflow_results_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_results
+    ADD CONSTRAINT workflow_results_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_runs workflow_runs_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT workflow_runs_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_runs workflow_runs_triggered_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT workflow_runs_triggered_by_fkey FOREIGN KEY (triggered_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: workflow_runs workflow_runs_workflow_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT workflow_runs_workflow_id_fkey FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_steps workflow_steps_workflow_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_steps
+    ADD CONSTRAINT workflow_steps_workflow_id_fkey FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_triggers workflow_triggers_workflow_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflow_triggers
+    ADD CONSTRAINT workflow_triggers_workflow_id_fkey FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflows workflows_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflows
+    ADD CONSTRAINT workflows_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: workflows workflows_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nhost_hasura
+--
+
+ALTER TABLE ONLY public.workflows
+    ADD CONSTRAINT workflows_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: SCHEMA public; Type: ACL; Schema: -; Owner: postgres
+--
+
+GRANT USAGE ON SCHEMA public TO nhost_hasura;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+

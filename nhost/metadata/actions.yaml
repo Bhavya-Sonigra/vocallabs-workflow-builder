@@ -2,14 +2,14 @@ actions:
   - name: approveStep
     definition:
       kind: synchronous
-      handler: http://functions:3000/approveStep
+      handler: "{{NHOST_FUNCTIONS_URL}}/approveStep"
       forward_client_headers: true
     permissions:
       - role: user
   - name: triggerWorkflowRun
     definition:
       kind: synchronous
-      handler: http://functions:3000/triggerWorkflowRun
+      handler: "{{NHOST_FUNCTIONS_URL}}/triggerWorkflowRun"
       forward_client_headers: true
     permissions:
       - role: user

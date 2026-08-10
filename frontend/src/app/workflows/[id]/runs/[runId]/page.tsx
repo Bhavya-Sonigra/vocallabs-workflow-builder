@@ -241,7 +241,7 @@ function StepRunCard({
                 <FiLock className="w-4 h-4 text-amber-500" /> Human Approval Required
               </h4>
               <p className="text-sm text-slate-500 mt-1 font-medium">
-                Review the previous step's output and approve this gate to continue execution.
+                Review the previous step&apos;s output and approve this gate to continue execution.
               </p>
             </div>
             <button

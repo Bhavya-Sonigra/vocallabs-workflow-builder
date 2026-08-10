@@ -27,6 +27,19 @@ Built with **Next.js**, **Apollo Client (GraphQL)**, **Nhost/Hasura**, and **Gro
 - **Serverless Functions:** Node.js (Express) deployed via Nhost Functions
 - **LLM Provider:** Groq (Llama-3.1-8b-instant)
 
+## Deployment & Architecture
+
+The application is deployed across two main cloud providers:
+
+- **Frontend (Vercel)**: The Next.js app is hosted on Vercel. It dynamically connects to the Nhost Cloud backend via environment variables (`NEXT_PUBLIC_NHOST_SUBDOMAIN` and `NEXT_PUBLIC_NHOST_REGION`).
+- **Backend (Nhost Cloud)**: The PostgreSQL database, Hasura GraphQL engine, and Serverless Functions (Node.js) are hosted on Nhost Cloud.
+
+### Configuring Secrets (Cloud)
+To add API keys (e.g., `LLM_API_KEY`) to the live application:
+1. Go to the Nhost Dashboard -> Settings -> Secrets.
+2. Add your secret (e.g., `LLM_API_KEY`).
+3. Ensure the secret is mapped in `nhost/nhost.toml` under `[[global.environment]]`.
+
 ## Local Development
 
 ### Prerequisites
@@ -39,7 +52,6 @@ Navigate to the root directory and start the local Nhost environment:
 ```bash
 nhost up
 ```
-This spins up PostgreSQL, Hasura, MinIO, Mailhog, and the local serverless functions environment.
 
 ### 2. Configure Environment Variables
 In `frontend/.env.development`:
@@ -47,9 +59,8 @@ In `frontend/.env.development`:
 NEXT_PUBLIC_NHOST_SUBDOMAIN=local
 NEXT_PUBLIC_NHOST_REGION=local
 ```
-In `.env.development` (Root):
+Locally, you can create a `.secrets` file in the root to mock Nhost Secrets:
 ```env
-# Add your API keys for the backend functions here
 LLM_API_KEY=your-groq-api-key-here
 ```
 

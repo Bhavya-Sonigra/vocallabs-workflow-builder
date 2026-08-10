@@ -16,13 +16,18 @@ function getAuthHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN || "local";
+const region = process.env.NEXT_PUBLIC_NHOST_REGION || "local";
+
 const GRAPHQL_HTTP_URL =
-  process.env.NEXT_PUBLIC_NHOST_GRAPHQL_URL ||
-  "https://local.graphql.local.nhost.run/v1";
+  subdomain === "local"
+    ? "https://local.graphql.local.nhost.run/v1"
+    : `https://${subdomain}.graphql.${region}.nhost.run/v1`;
 
 const GRAPHQL_WS_URL =
-  process.env.NEXT_PUBLIC_NHOST_GRAPHQL_WS_URL ||
-  "wss://local.graphql.local.nhost.run/v1";
+  subdomain === "local"
+    ? "wss://local.graphql.local.nhost.run/v1"
+    : `wss://${subdomain}.graphql.${region}.nhost.run/v1`;
 
 // setContext re-reads the auth header on EVERY request, not just once at
 // startup — required since the access token expires every 15 minutes

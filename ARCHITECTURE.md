@@ -47,3 +47,12 @@ To resume, an authorized user must explicitly call the `approveStep` Hasura Acti
 3. It updates the `step_run` to `succeeded` and logs the `approved_by` UUID and timestamp.
 4. It updates the parent `workflow_run` back to `running`.
 5. It fetches all remaining `workflow_steps` (where `step_order > current_order`) and re-invokes the asynchronous execution loop to process the rest of the pipeline.
+
+## 4. Deployment Architecture
+
+The application is deployed across two main cloud providers for optimal performance and developer experience:
+
+*   **Frontend (Vercel)**: The Next.js frontend is deployed on Vercel. It uses environment variables (e.g., `NEXT_PUBLIC_NHOST_SUBDOMAIN`, `NEXT_PUBLIC_NHOST_REGION`) to dynamically construct the Apollo GraphQL Client and Auth URLs. This ensures the frontend always points to the correct live cloud API.
+*   **Backend & Database (Nhost Cloud)**: The PostgreSQL database, Hasura GraphQL Engine, Auth service, and Node.js Serverless Functions are deployed on Nhost Cloud.
+*   **Webhooks & Actions**: Hasura Actions (used for execution gating and triggering runs) securely route to the Nhost serverless functions using the `{{NHOST_FUNCTIONS_URL}}` environment variable, ensuring robust DNS routing within the Nhost cluster.
+*   **Secrets Management**: Sensitive data, such as the `LLM_API_KEY`, are stored securely in the Nhost Cloud Dashboard under Secrets. These secrets are explicitly injected into the serverless functions' environment variables via the `[[global.environment]]` mapping in `nhost/nhost.toml`.
