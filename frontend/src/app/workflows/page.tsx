@@ -26,6 +26,7 @@ function WorkflowsContent() {
   const { data, loading, refetch } = useQuery<any>(GET_WORKFLOWS, {
     variables: { org_id: orgId },
     skip: !orgId,
+    fetchPolicy: "cache-and-network",
   });
 
   const { data: statsData, error: statsError } = useSubscription<any>(SUBSCRIBE_ORG_STATS, {

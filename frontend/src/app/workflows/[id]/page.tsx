@@ -103,6 +103,7 @@ function BuilderContent() {
   // --- Queries ---
   const { data, loading, refetch } = useQuery<any>(GET_WORKFLOW, {
     variables: { id: workflowId },
+    fetchPolicy: "cache-and-network",
   });
 
   const workflow = data?.workflows_by_pk;
@@ -111,8 +112,9 @@ function BuilderContent() {
   const orgId = workflow?.org_id;
 
   const { data: roleData } = useQuery<any>(GET_ORG_MEMBER_ROLE, {
-    variables: { org_id: orgId, user_id: user?.id },
-    skip: !orgId || !user?.id,
+    variables: { org_id: workflow?.org_id, user_id: user?.id },
+    skip: !workflow?.org_id || !user?.id,
+    fetchPolicy: "cache-and-network",
   });
 
   const userRole = roleData?.org_members?.[0]?.role;
