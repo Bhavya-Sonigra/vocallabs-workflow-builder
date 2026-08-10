@@ -64,3 +64,17 @@ select_permissions:
               user_id:
                 _eq: X-Hasura-User-Id
     comment: ""
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        workflow:
+          organization:
+            org_members:
+              role:
+                _in:
+                  - owner
+                  - editor
+              user_id:
+                _eq: X-Hasura-User-Id
+    comment: ""

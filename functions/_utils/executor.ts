@@ -326,67 +326,137 @@ export async function executeHttpRequest(
 }
 
 /**
- * Execute an llm_call step.
- * Tries Gemini API if GEMINI_API_KEY is set, otherwise returns { text: "APPROVED" }.
+ * Execute an llm_call step via OpenRouter.
+ *
+ * Config shape expected in the step's config:
+ *   {
+ *     "prompt": "Summarize the previous step output",
+ *     "model": "meta-llama/llama-3-8b-instruct:free",  // optional override
+ *     "system": "You are a helpful assistant."          // optional system prompt
+ *   }
+ *
+ * Previous step outputs are injected into the user message as JSON context.
  */
 export async function executeLlmCall(
   config: StepConfig,
   previousOutputs: Record<string, StepOutput>
 ): Promise<StepResult> {
-  const prompt: string =
-    config.prompt || "Analyze the input and return APPROVED or REJECTED.";
-  const context = JSON.stringify(previousOutputs);
-  const geminiKey = process.env.GEMINI_API_KEY;
-
-  if (geminiKey) {
+  // ── 1. Read & validate env key ────────────────────────────────────────────
+  let apiKey = process.env.LLM_API_KEY;
+  
+  // Local fallback: read directly from file if Nhost CLI didn't inject it
+  if (!apiKey) {
     try {
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: `${prompt}\n\nContext from previous steps:\n${context}`,
-                  },
-                ],
-              },
-            ],
-          }),
-        }
-      );
-      if (resp.ok) {
-        const json: any = await resp.json();
-        const text =
-          json.candidates?.[0]?.content?.parts?.[0]?.text || "NO_RESPONSE";
-        return {
-          success: true,
-          output: { text, model: "gemini-2.0-flash", raw: json },
-        };
-      }
-      const errText = await resp.text();
-      return {
-        success: false,
-        error: `Gemini API error ${resp.status}: ${errText.slice(0, 500)}`,
-      };
-    } catch (e: any) {
-      return { success: false, error: `Gemini API error: ${e.message}` };
-    }
+      const fs = require("fs");
+      const envDev = fs.readFileSync("/opt/project/.env.development", "utf8");
+      const match = envDev.match(/LLM_API_KEY\s*=\s*['"]?(gsk_[^'"\n\r]+)['"]?/);
+      if (match) apiKey = match[1];
+    } catch {}
+  }
+  
+  if (!apiKey) {
+    try {
+      const fs = require("fs");
+      const secrets = fs.readFileSync("/opt/project/.secrets", "utf8");
+      const match = secrets.match(/LLM_API_KEY\s*=\s*['"]?(gsk_[^'"\n\r]+)['"]?/);
+      if (match) apiKey = match[1];
+    } catch {}
   }
 
-  // Fallback stub
-  return {
-    success: true,
-    output: {
-      text: "APPROVED",
-      model: "fallback-stub",
-      note: "Set GEMINI_API_KEY for real LLM calls",
-    },
+  if (!apiKey) {
+    return {
+      success: false,
+      error:
+        "llm_call: LLM_API_KEY is not configured. Add it to your Nhost secrets and [functions.env] in nhost.toml.",
+    };
+  }
+
+  // ── 2. Build messages ─────────────────────────────────────────────────────
+  const prompt: string =
+    config.prompt || "Analyze the input and return a concise summary.";
+  const model: string =
+    config.model || "llama-3.1-8b-instant"; // Groq's current Llama 3.1 8B model
+  const systemPrompt: string =
+    config.system || "You are a helpful AI assistant in an automated workflow.";
+
+  // Inject context from previous steps so the LLM can use upstream outputs
+  const contextBlock =
+    Object.keys(previousOutputs).length > 0
+      ? `\n\n---\nContext from previous workflow steps:\n${JSON.stringify(previousOutputs, null, 2)}`
+      : "";
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: `${prompt}${contextBlock}` },
+  ];
+
+  // ── 3. Make the API call (with one retry on transient failure) ────────────
+  const callGroq = async (): Promise<StepResult> => {
+    let resp: globalThis.Response;
+    try {
+      resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ model, messages }),
+        // Groq is very fast but let's give it 30s headroom
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (e: any) {
+      return {
+        success: false,
+        error: `llm_call: network error — ${e.message}`,
+      };
+    }
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "(unreadable)");
+      return {
+        success: false,
+        error: `llm_call: Groq returned ${resp.status} — ${errText.slice(0, 500)}`,
+      };
+    }
+
+    let json: any;
+    try {
+      json = await resp.json();
+    } catch (e: any) {
+      return {
+        success: false,
+        error: `llm_call: failed to parse Groq response — ${e.message}`,
+      };
+    }
+
+    const text: string | undefined = json?.choices?.[0]?.message?.content;
+
+    if (!text) {
+      return {
+        success: false,
+        error: `llm_call: unexpected response shape — ${JSON.stringify(json).slice(0, 500)}`,
+      };
+    }
+
+    return {
+      success: true,
+      output: {
+        text,
+        model: json?.model ?? model,
+        usage: json?.usage ?? null,
+      },
+    };
   };
+
+  // ── 4. First attempt ──────────────────────────────────────────────────────
+  const first = await callGroq();
+  if (first.success) return first;
+
+  // ── 5. One retry on failure ───────────────────────────────────────────────
+  console.warn(`[executor] llm_call first attempt failed: ${first.error} — retrying…`);
+  return callGroq();
 }
+
 
 /**
  * Execute a conditional_branch step.
@@ -396,56 +466,44 @@ export function executeConditionalBranch(
   previousOutputs: Record<string, StepOutput>,
   stepKeys: string[]
 ): StepResult {
-  const condition = (config.condition || "APPROVED").toUpperCase();
-  const onMismatch = config.on_mismatch || "fail";
+  const field = config.field || "text";
+  const operator = config.operator || "truthy";
+  const expectedValue = config.value;
 
-  let sourceText = "";
-  if (config.source_step && previousOutputs[config.source_step]) {
-    sourceText = String(
-      previousOutputs[config.source_step].text || ""
-    ).toUpperCase();
-  } else {
-    for (let i = stepKeys.length - 1; i >= 0; i--) {
-      const out = previousOutputs[stepKeys[i]];
-      if (out && out.model) {
-        sourceText = String(out.text || "").toUpperCase();
-        break;
-      }
-    }
-  }
+  // Find the immediate previous step's output if stepKeys is populated
+  const prevStepKey = stepKeys.length > 1 ? stepKeys[stepKeys.length - 2] : null;
+  const prevOutput = prevStepKey ? previousOutputs[prevStepKey] : {};
 
-  const matched = sourceText.includes(condition);
+  // Extract the actual value based on the field name
+  const actualValue = prevOutput ? prevOutput[field] : undefined;
+  let passed = false;
 
-  if (matched) {
-    return {
-      success: true,
-      output: {
-        decision: "continue",
-        matched_condition: condition,
-        source_text: sourceText,
-      },
-    };
-  }
-
-  if (onMismatch === "skip") {
-    return {
-      success: true,
-      output: {
-        decision: "skip_remaining",
-        matched_condition: condition,
-        source_text: sourceText,
-      },
-      skipRemaining: true,
-    };
+  switch (operator) {
+    case "equals":
+      passed = String(actualValue) === String(expectedValue);
+      break;
+    case "not_equals":
+      passed = String(actualValue) !== String(expectedValue);
+      break;
+    case "contains":
+      passed = String(actualValue).includes(String(expectedValue));
+      break;
+    case "truthy":
+      passed = !!actualValue;
+      break;
+    default:
+      return {
+        success: false,
+        error: `conditional_branch: Unknown operator '${operator}'`,
+      };
   }
 
   return {
-    success: false,
-    error: `conditional_branch: condition "${condition}" not met. Source text: "${sourceText}"`,
+    success: true,
     output: {
-      decision: "failed",
-      matched_condition: condition,
-      source_text: sourceText,
+      result: passed,
+      branch_taken: passed ? "true_path" : "false_path",
+      evaluated_value: actualValue,
     },
   };
 }

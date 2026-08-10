@@ -7,7 +7,7 @@ import Header from "@/components/header";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "VocaLabs Workflow Builder",
+  title: "Vocallabs Workflow Builder",
   description: "Build and manage automated workflows",
 };
 
@@ -17,8 +17,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} antialiased bg-zinc-950 text-zinc-50`}>
+    <html lang="en">
+      <body className={`${inter.className} antialiased bg-slate-50 text-slate-900`}>
         <Providers>
           <Header />
           <main>{children}</main>

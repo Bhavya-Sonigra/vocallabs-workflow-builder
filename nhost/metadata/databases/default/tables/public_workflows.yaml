@@ -92,3 +92,16 @@ update_permissions:
               _eq: X-Hasura-User-Id
       check: null
     comment: ""
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        organization:
+          org_members:
+            role:
+              _in:
+                - owner
+                - editor
+            user_id:
+              _eq: X-Hasura-User-Id
+    comment: ""

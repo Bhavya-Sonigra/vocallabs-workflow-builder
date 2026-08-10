@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useParams } from "next/navigation";
-import { useQuery, useMutation, useSubscription } from "@apollo/client/react";
+import { useParams, useRouter } from "next/navigation";
+import { useQuery, useMutation } from "@apollo/client/react";
 import AuthGuard from "@/components/auth-guard";
 import { useAuth } from "@/hooks/useAuth";
 import { GET_WORKFLOW, GET_ORG_MEMBER_ROLE } from "@/lib/graphql/queries";
@@ -11,9 +11,8 @@ import {
   DELETE_WORKFLOW_STEP,
   INSERT_WORKFLOW_TRIGGER,
   TRIGGER_WORKFLOW_RUN,
-  APPROVE_STEP,
 } from "@/lib/graphql/mutations";
-import { SUBSCRIBE_STEP_RUNS } from "@/lib/graphql/subscriptions";
+import { FiPlay, FiArrowUp, FiArrowDown, FiTrash2, FiPlus } from "react-icons/fi";
 
 const STEP_TYPES = [
   "llm_call",
@@ -58,21 +57,23 @@ interface StepRun {
 
 function statusColor(status: string) {
   switch (status) {
+    case "succeeded":
     case "completed":
-      return "text-emerald-400";
+      return "text-teal-600";
     case "running":
       return "text-blue-400";
     case "failed":
-      return "text-red-400";
+      return "text-rose-600";
     case "paused":
       return "text-yellow-400";
     default:
-      return "text-zinc-500";
+      return "text-slate-400";
   }
 }
 
 function statusDot(status: string) {
   switch (status) {
+    case "succeeded":
     case "completed":
       return "bg-emerald-400";
     case "running":
@@ -88,6 +89,7 @@ function statusDot(status: string) {
 
 function BuilderContent() {
   const params = useParams();
+  const router = useRouter();
   const workflowId = params.id as string;
   const { user } = useAuth();
 
@@ -96,7 +98,6 @@ function BuilderContent() {
   const [newStepConfig, setNewStepConfig] = useState("{}");
   const [triggerType, setTriggerType] = useState<string>(TRIGGER_TYPES[0]);
   const [triggerConfig, setTriggerConfig] = useState("{}");
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runError, setRunError] = useState("");
 
   // --- Queries ---
@@ -136,22 +137,12 @@ function BuilderContent() {
     TRIGGER_WORKFLOW_RUN,
     {
       onCompleted: (d: any) => {
-        setActiveRunId(d.triggerWorkflowRun.run_id);
-        setRunError("");
+        const runId = d.triggerWorkflowRun.run_id;
+        router.push(`/workflows/${workflowId}/runs/${runId}`);
       },
       onError: (e) => setRunError(e.message),
     }
   );
-
-  const [approveStep, { loading: approving }] = useMutation(APPROVE_STEP);
-
-  // --- Subscription ---
-  const { data: subData } = useSubscription<any>(SUBSCRIBE_STEP_RUNS, {
-    variables: { workflow_run_id: activeRunId },
-    skip: !activeRunId,
-  });
-
-  const stepRuns: StepRun[] = subData?.step_runs ?? [];
 
   // --- Handlers ---
   const handleAddStep = async (e: React.FormEvent) => {
@@ -167,7 +158,7 @@ function BuilderContent() {
       variables: {
         workflow_id: workflowId,
         type: newStepType,
-        step_order: steps.length + 1,
+        step_order: steps.length > 0 ? Math.max(...steps.map((s) => s.step_order)) + 1 : 1,
         config,
       },
     });
@@ -177,12 +168,6 @@ function BuilderContent() {
   const handleReorder = async (index: number, direction: "up" | "down") => {
     const swapIndex = direction === "up" ? index - 1 : index + 1;
     if (swapIndex < 0 || swapIndex >= steps.length) return;
-
-    // Delete both and re-insert with swapped orders
-    // Simpler: delete both, refetch, re-insert. But that's complex.
-    // Instead we'll delete and re-insert — but the simplest approach for now
-    // is just to delete all and re-insert in new order.
-    // Actually, let's just swap step_order via two deletes and inserts.
     const a = steps[index];
     const b = steps[swapIndex];
     await deleteStep({ variables: { id: a.id } });
@@ -224,10 +209,6 @@ function BuilderContent() {
     triggerRun({ variables: { workflow_id: workflowId } });
   };
 
-  const handleApprove = async (stepRunId: string) => {
-    await approveStep({ variables: { step_run_id: stepRunId } });
-  };
-
   // --- Render ---
   if (loading) {
     return (
@@ -240,7 +221,7 @@ function BuilderContent() {
   if (!workflow) {
     return (
       <div className="max-w-4xl mx-auto px-6 py-10">
-        <p className="text-zinc-500">Workflow not found.</p>
+        <p className="text-slate-400">Workflow not found.</p>
       </div>
     );
   }
@@ -252,22 +233,22 @@ function BuilderContent() {
         <div>
           <h1 className="text-2xl font-bold">{workflow.name}</h1>
           {workflow.description && (
-            <p className="text-sm text-zinc-400 mt-1">{workflow.description}</p>
+            <p className="text-sm text-slate-500 mt-1">{workflow.description}</p>
           )}
         </div>
         {!isViewer && (
           <button
             onClick={handleRun}
             disabled={triggering}
-            className="px-5 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-2 px-5 py-2.5 bg-teal-600 text-white text-sm font-semibold rounded-xl hover:bg-teal-500 disabled:opacity-50 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5"
           >
-            {triggering ? "Starting..." : "▶ Run"}
+            {triggering ? "Starting..." : <><FiPlay className="w-4 h-4" /> Run</>}
           </button>
         )}
       </div>
 
       {runError && (
-        <p className="text-sm text-red-400 bg-red-950 border border-red-900 rounded-lg px-3 py-2 mb-6">
+        <p className="text-sm text-rose-600 bg-rose-50 border border-red-900 rounded-lg px-3 py-2 mb-6">
           {runError}
         </p>
       )}
@@ -278,20 +259,20 @@ function BuilderContent() {
           <h2 className="text-lg font-semibold mb-4">Steps</h2>
 
           {steps.length === 0 ? (
-            <p className="text-sm text-zinc-500 mb-4">No steps yet.</p>
+            <p className="text-sm text-slate-400 mb-4">No steps yet.</p>
           ) : (
             <div className="space-y-2 mb-6">
               {steps.map((step, i) => (
                 <div
                   key={step.id}
-                  className="p-3 border border-zinc-800 rounded-lg"
+                  className="p-3 border border-slate-200 rounded-lg"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono text-zinc-500">
+                      <span className="text-xs font-mono text-slate-400">
                         #{step.step_order}
                       </span>
-                      <span className="text-sm font-medium px-2 py-0.5 bg-zinc-800 rounded">
+                      <span className="text-sm font-medium px-2 py-0.5 bg-slate-100 rounded">
                         {step.type}
                       </span>
                     </div>
@@ -299,31 +280,31 @@ function BuilderContent() {
                       <button
                         onClick={() => handleReorder(i, "up")}
                         disabled={i === 0}
-                        className="p-1 text-zinc-500 hover:text-white disabled:opacity-30 text-xs"
+                        className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md disabled:opacity-30 transition-colors"
                         title="Move up"
                       >
-                        ▲
+                        <FiArrowUp className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleReorder(i, "down")}
                         disabled={i === steps.length - 1}
-                        className="p-1 text-zinc-500 hover:text-white disabled:opacity-30 text-xs"
+                        className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md disabled:opacity-30 transition-colors"
                         title="Move down"
                       >
-                        ▼
+                        <FiArrowDown className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() =>
                           deleteStep({ variables: { id: step.id } })
                         }
-                        className="p-1 text-zinc-500 hover:text-red-400 text-xs ml-2"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md ml-2 transition-colors"
                         title="Delete"
                       >
-                        ✕
+                        <FiTrash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
-                  <pre className="text-xs text-zinc-500 mt-2 overflow-auto max-h-24">
+                  <pre className="text-xs text-slate-400 mt-2 overflow-auto max-h-24">
                     {JSON.stringify(step.config, null, 2)}
                   </pre>
                 </div>
@@ -334,13 +315,13 @@ function BuilderContent() {
           {/* Add Step form */}
           <form
             onSubmit={handleAddStep}
-            className="p-4 border border-zinc-800 rounded-lg space-y-3"
+            className="p-4 border border-slate-200 rounded-lg space-y-3"
           >
-            <h3 className="text-sm font-medium text-zinc-400">Add Step</h3>
+            <h3 className="text-sm font-medium text-slate-500">Add Step</h3>
             <select
               value={newStepType}
               onChange={(e) => setNewStepType(e.target.value)}
-              className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-zinc-500"
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-zinc-500"
             >
               {STEP_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -353,14 +334,14 @@ function BuilderContent() {
               onChange={(e) => setNewStepConfig(e.target.value)}
               rows={4}
               placeholder='{"key": "value"}'
-              className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white font-mono text-sm placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-800 font-mono text-sm placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
             />
             <button
               type="submit"
               disabled={addingStep}
-              className="px-4 py-2 bg-zinc-700 text-white text-sm rounded-lg hover:bg-zinc-600 disabled:opacity-50 transition-colors"
+              className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-slate-100 text-slate-700 font-semibold text-sm rounded-xl hover:bg-slate-200 disabled:opacity-50 transition-colors"
             >
-              {addingStep ? "Adding..." : "+ Add Step"}
+              {addingStep ? "Adding..." : <><FiPlus className="w-4 h-4" /> Add Step</>}
             </button>
           </form>
         </div>
@@ -371,26 +352,26 @@ function BuilderContent() {
           <div>
             <h2 className="text-lg font-semibold mb-4">Trigger</h2>
             {triggers.length > 0 ? (
-              <div className="p-3 border border-zinc-800 rounded-lg">
-                <span className="text-sm font-medium px-2 py-0.5 bg-zinc-800 rounded">
+              <div className="p-3 border border-slate-200 rounded-lg">
+                <span className="text-sm font-medium px-2 py-0.5 bg-slate-100 rounded">
                   {triggers[0].type}
                 </span>
-                <pre className="text-xs text-zinc-500 mt-2 overflow-auto max-h-24">
+                <pre className="text-xs text-slate-400 mt-2 overflow-auto max-h-24">
                   {JSON.stringify(triggers[0].config, null, 2)}
                 </pre>
               </div>
             ) : (
               <form
                 onSubmit={handleAttachTrigger}
-                className="p-4 border border-zinc-800 rounded-lg space-y-3"
+                className="p-4 border border-slate-200 rounded-lg space-y-3"
               >
-                <h3 className="text-sm font-medium text-zinc-400">
+                <h3 className="text-sm font-medium text-slate-500">
                   Attach Trigger
                 </h3>
                 <select
                   value={triggerType}
                   onChange={(e) => setTriggerType(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-zinc-500"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-zinc-500"
                 >
                   {TRIGGER_TYPES.map((t) => (
                     <option key={t} value={t}>
@@ -403,12 +384,12 @@ function BuilderContent() {
                   onChange={(e) => setTriggerConfig(e.target.value)}
                   rows={3}
                   placeholder='{"key": "value"}'
-                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white font-mono text-sm placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-800 font-mono text-sm placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
                 />
                 <button
                   type="submit"
                   disabled={addingTrigger}
-                  className="px-4 py-2 bg-zinc-700 text-white text-sm rounded-lg hover:bg-zinc-600 disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 bg-slate-200 text-slate-800 text-sm rounded-lg hover:bg-zinc-600 disabled:opacity-50 transition-colors"
                 >
                   {addingTrigger ? "Attaching..." : "Attach Trigger"}
                 </button>
@@ -416,59 +397,17 @@ function BuilderContent() {
             )}
           </div>
 
-          {/* Live run status */}
-          {activeRunId && (
-            <div>
-              <h2 className="text-lg font-semibold mb-4">Run Status</h2>
-              <p className="text-xs text-zinc-500 mb-3 font-mono">
-                Run: {activeRunId}
-              </p>
-
-              {stepRuns.length === 0 ? (
-                <p className="text-sm text-zinc-500">Waiting for steps...</p>
-              ) : (
-                <div className="space-y-2">
-                  {stepRuns.map((sr) => (
-                    <div
-                      key={sr.id}
-                      className="p-3 border border-zinc-800 rounded-lg"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`w-2 h-2 rounded-full ${statusDot(sr.status)}`}
-                          />
-                          <span className="text-xs font-mono text-zinc-500">
-                            #{sr.workflow_step?.step_order}
-                          </span>
-                          <span className="text-sm">
-                            {sr.workflow_step?.type}
-                          </span>
-                        </div>
-                        <span className={`text-xs font-medium ${statusColor(sr.status)}`}>
-                          {sr.status}
-                        </span>
-                      </div>
-
-                      {sr.error && (
-                        <p className="text-xs text-red-400 mt-1">{sr.error}</p>
-                      )}
-
-                      {sr.status === "paused" && (
-                        <button
-                          onClick={() => handleApprove(sr.id)}
-                          disabled={approving}
-                          className="mt-2 px-3 py-1 bg-yellow-600 text-white text-xs font-medium rounded hover:bg-yellow-500 disabled:opacity-50 transition-colors"
-                        >
-                          {approving ? "Approving..." : "Approve"}
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Trigger run info */}
+          <div className="p-5 bg-white border border-slate-200 rounded-xl text-sm text-slate-500 shadow-sm">
+            <p className="font-bold text-slate-800 flex items-center gap-2 mb-2">
+              <FiPlay className="w-4 h-4 text-teal-600" /> Trigger a Run
+            </p>
+            <p className="text-xs leading-relaxed">
+              Click the Run button above to start a live execution. You&apos;ll be
+              taken to the run view where you can watch each step execute in
+              real-time and approve any paused steps.
+            </p>
+          </div>
         </div>
       </div>
     </div>

@@ -41,3 +41,5 @@ Thumbs.db
 # Misc
 coverage/
 *.log
+nhost/nhost.toml
+.env.development

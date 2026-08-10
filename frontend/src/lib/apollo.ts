@@ -18,11 +18,11 @@ function getAuthHeaders() {
 
 const GRAPHQL_HTTP_URL =
   process.env.NEXT_PUBLIC_NHOST_GRAPHQL_URL ||
-  "https://local.graphql.local.nhost.run/v1/graphql";
+  "https://local.graphql.local.nhost.run/v1";
 
 const GRAPHQL_WS_URL =
   process.env.NEXT_PUBLIC_NHOST_GRAPHQL_WS_URL ||
-  "wss://local.graphql.local.nhost.run/v1/graphql";
+  "wss://local.graphql.local.nhost.run/v1";
 
 // setContext re-reads the auth header on EVERY request, not just once at
 // startup — required since the access token expires every 15 minutes

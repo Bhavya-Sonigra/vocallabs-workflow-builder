@@ -14,7 +14,7 @@ export const INSERT_WORKFLOW = gql`
 export const INSERT_WORKFLOW_STEP = gql`
   mutation InsertWorkflowStep(
     $workflow_id: uuid!
-    $type: String!
+    $type: step_type!
     $step_order: Int!
     $config: jsonb!
   ) {
@@ -45,7 +45,7 @@ export const DELETE_WORKFLOW_STEP = gql`
 export const INSERT_WORKFLOW_TRIGGER = gql`
   mutation InsertWorkflowTrigger(
     $workflow_id: uuid!
-    $type: String!
+    $type: trigger_type!
     $config: jsonb!
   ) {
     insert_workflow_triggers_one(
@@ -72,6 +72,14 @@ export const APPROVE_STEP = gql`
     approveStep(step_run_id: $step_run_id) {
       success
       status
+    }
+  }
+`;
+
+export const DELETE_WORKFLOW_BY_PK = gql`
+  mutation DeleteWorkflow($id: uuid!) {
+    delete_workflows_by_pk(id: $id) {
+      id
     }
   }
 `;
