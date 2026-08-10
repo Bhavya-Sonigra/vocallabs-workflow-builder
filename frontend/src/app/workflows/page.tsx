@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@apollo/client/react";
 import { useRouter } from "next/navigation";
 import AuthGuard from "@/components/auth-guard";
-import { GET_WORKFLOWS, GET_MY_ORGS } from "@/lib/graphql/queries";
+import { GET_WORKFLOWS, GET_MY_ORGS, GET_ORG_STATS } from "@/lib/graphql/queries";
 import { INSERT_WORKFLOW, TRIGGER_WORKFLOW_RUN, DELETE_WORKFLOW_BY_PK } from "@/lib/graphql/mutations";
 import Link from "next/link";
 import { FiPlus, FiAlertTriangle, FiZap, FiTrash2, FiPlay, FiStar } from "react-icons/fi";
@@ -21,6 +21,11 @@ function WorkflowsContent() {
   const orgId = orgsData?.org_members?.[0]?.org_id;
 
   const { data, loading, refetch } = useQuery<any>(GET_WORKFLOWS, {
+    variables: { org_id: orgId },
+    skip: !orgId,
+  });
+
+  const { data: statsData } = useQuery<any>(GET_ORG_STATS, {
     variables: { org_id: orgId },
     skip: !orgId,
   });
@@ -81,20 +86,32 @@ function WorkflowsContent() {
   };
 
   const workflows = data?.workflows ?? [];
+  const stats = statsData?.org_run_stats?.[0];
+  const avgDuration = stats?.avg_duration_seconds ? stats.avg_duration_seconds.toFixed(2) : "0.00";
+  const totalRuns = stats?.total_runs ?? 0;
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">
       {/* Page Header */}
       <div className="flex items-center justify-between mb-10">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-800">
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-800 flex items-center gap-4">
             Your Workflows
           </h1>
-          <p className="text-slate-500 mt-2 font-medium">
-            {workflows.length > 0
-              ? `Managing ${workflows.length} active automation${workflows.length !== 1 ? "s" : ""}`
-              : "No workflows created yet."}
-          </p>
+          <div className="flex items-center gap-4 mt-3">
+            <p className="text-slate-500 font-medium">
+              {workflows.length > 0
+                ? `Managing ${workflows.length} active automation${workflows.length !== 1 ? "s" : ""}`
+                : "No workflows created yet."}
+            </p>
+            {totalRuns > 0 && (
+              <div className="flex items-center gap-3 px-3 py-1 bg-teal-50 border border-teal-100 rounded-lg text-xs font-semibold text-teal-700">
+                <span>Total Runs: {totalRuns}</span>
+                <span className="w-1 h-1 rounded-full bg-teal-300" />
+                <span>Avg Duration: {avgDuration}s</span>
+              </div>
+            )}
+          </div>
         </div>
         <button
           onClick={() => setShowNew(!showNew)}

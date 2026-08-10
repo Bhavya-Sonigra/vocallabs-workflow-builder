@@ -74,3 +74,12 @@ export const GET_MY_ORGS = gql`
     }
   }
 `;
+
+export const GET_ORG_STATS = gql`
+  query GetOrgStats($org_id: uuid!) {
+    org_run_stats(where: { org_id: { _eq: $org_id } }) {
+      total_runs
+      avg_duration_seconds
+    }
+  }
+`;
